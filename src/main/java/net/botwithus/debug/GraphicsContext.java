@@ -52,7 +52,8 @@ public class GraphicsContext extends ScriptGraphicsContext {
             //ImGui.Text("XP Gained: " + script.xpGained);
             ImGui.Separator();
             ImGui.Text("Bot State: " + script.currentState);
-
+            ImGui.Separator();
+            ImGui.Text("Start at Fort Forinthry and have the required materials in your inventory.");
             ImGui.End();
         }
     }
