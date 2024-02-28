@@ -53,6 +53,10 @@ public class FortScript extends LoopingScript {
     }
     BotState currentState = BotState.FIND_CONSTRUCTION_SPOT;
     public NativeInteger selectedIndex = new NativeInteger(0);
+
+    public  Pattern framePattern = Pattern.compile(".*frame.*", Pattern.CASE_INSENSITIVE);
+    public Pattern wallSegmentPattern = Pattern.compile(".*wall segment.*", Pattern.CASE_INSENSITIVE);
+
     @Override
     public boolean initialize() {
         this.sgc = new GraphicsContext(getConsole(), this);
@@ -95,8 +99,6 @@ public class FortScript extends LoopingScript {
         }
     }
     private boolean hasRequiredMaterials() {
-        Pattern framePattern = Pattern.compile(".*frame.*", Pattern.CASE_INSENSITIVE);
-        Pattern wallSegmentPattern = Pattern.compile(".*wall segment.*", Pattern.CASE_INSENSITIVE);
 
         int frameCount = 0;
         int wallSegmentCount = 0;
