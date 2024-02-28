@@ -9,6 +9,7 @@ import net.botwithus.rs3.game.minimenu.MiniMenu;
 import net.botwithus.rs3.game.minimenu.actions.ComponentAction;
 import net.botwithus.rs3.game.queries.builders.objects.SceneObjectQuery;
 import net.botwithus.rs3.game.queries.results.EntityResultSet;
+import net.botwithus.rs3.game.scene.entities.characters.player.Player;
 import net.botwithus.rs3.game.scene.entities.object.SceneObject;
 import net.botwithus.rs3.game.skills.Skills;
 import net.botwithus.rs3.imgui.NativeInteger;
@@ -80,6 +81,11 @@ public class FortScript extends LoopingScript {
         if (!runScript) {
             return;
         }
+        Player player = Client.getLocalPlayer();
+        if (Client.getGameState() != Client.GameState.LOGGED_IN || player == null) {
+            Execution.delay(RandomGenerator.nextInt(2500,5500));
+            return;
+        }
         switch (currentState) {
             case WALK_TO_CONSTRUCTION_SPOT:
                 walkToConstructionSpot();
@@ -105,6 +111,9 @@ public class FortScript extends LoopingScript {
 
         for (Item item : Backpack.getItems()) {
             String itemName = item.getName();
+            if(itemName == null) {
+                continue;
+            }
 
             Matcher frameMatcher = framePattern.matcher(itemName);
             if (frameMatcher.matches()) {
@@ -160,19 +169,19 @@ public class FortScript extends LoopingScript {
         SceneObject spot = Blueprintspot.first();
         if (spot != null) {
 
-                if (!Client.getLocalPlayer().isMoving() && Distance.to(spot) <= 8) {
-                    runCounter++;
-                    boolean interfaceOpened = Execution.delayUntil(RandomGenerator.nextInt(800, 3000), () -> Boolean.valueOf(Interfaces.isOpen(1370)));
+            if (Client.getLocalPlayer() != null && !Client.getLocalPlayer().isMoving() && Distance.to(spot) <= 8) {
+                runCounter++;
+                boolean interfaceOpened = Execution.delayUntil(RandomGenerator.nextInt(800, 3000), () -> Interfaces.isOpen(1370));
 
-                    if (interfaceOpened) {
-                        println("Interface opened");
-                        currentState = BotState.CHECK_PLANS;
-                    } else {
-                        spot.interact("Check plans");
-                        Execution.delay(RandomGenerator.nextInt(800, 1500));
-                        println("Found blueprint spot");
-                    }
+                if (interfaceOpened) {
+                    println("Interface opened");
+                    currentState = BotState.CHECK_PLANS;
+                } else {
+                    spot.interact("Check plans");
+                    Execution.delay(RandomGenerator.nextInt(800, 1500));
+                    println("Found blueprint spot");
                 }
+            }
         } else {
             currentState = BotState.FIND_CONSTRUCTION_SPOT;
         }
@@ -263,9 +272,7 @@ public class FortScript extends LoopingScript {
 
            Execution.delayUntil(RandomGenerator.nextInt(600, 1000), () -> !Client.getLocalPlayer().isMoving());
 
-           if(Client.getLocalPlayer().getCoordinate().getX() == x && Client.getLocalPlayer().getCoordinate().getY() == y) {
-               return true;
-           }
+           return Client.getLocalPlayer().getCoordinate().getX() == x && Client.getLocalPlayer().getCoordinate().getY() == y;
        }
          return false;
     }
