@@ -7,6 +7,9 @@ import net.botwithus.rs3.game.*;
 import net.botwithus.rs3.game.hud.interfaces.Interfaces;
 import net.botwithus.rs3.game.minimenu.MiniMenu;
 import net.botwithus.rs3.game.minimenu.actions.ComponentAction;
+import net.botwithus.rs3.game.movement.Movement;
+import net.botwithus.rs3.game.movement.NavPath;
+import net.botwithus.rs3.game.movement.TraverseEvent;
 import net.botwithus.rs3.game.queries.builders.objects.SceneObjectQuery;
 import net.botwithus.rs3.game.queries.results.EntityResultSet;
 import net.botwithus.rs3.game.scene.entities.characters.player.Player;
@@ -144,19 +147,21 @@ public class FortScript extends LoopingScript {
                 currentState = BotState.FIND_BLUEPRINT_SPOT;
                 runScript = false;
                 return;
-            }
+            }else
+            {
             int optionIndex = 1 + (selectedIndex.get() * 4);
             MiniMenu.interact(ComponentAction.COMPONENT.getType(), 1, optionIndex, 89849878);
             Execution.delay(RandomGenerator.nextInt(800, 1500));
             MiniMenu.interact(ComponentAction.DIALOGUE.getType(), 0, -1, 89784350);
             Execution.delay(RandomGenerator.nextInt(3000, 5000));
             currentState = BotState.WALK_TO_CONSTRUCTION_SPOT;
-        }
+            }
+            }
     }
 
     private void walkToTable() {
         Coordinate table = area.getRandomCoordinate();
-        if(!area.contains(Client.getLocalPlayer().getCoordinate())) {
+        if (!this.area.contains(Client.getLocalPlayer().getCoordinate())) {
             WalkTo(table);
         }else {
                 println("Walking to table");
@@ -171,7 +176,7 @@ public class FortScript extends LoopingScript {
 
             if (Client.getLocalPlayer() != null && !Client.getLocalPlayer().isMoving() && Distance.to(spot) <= 8) {
                 runCounter++;
-                boolean interfaceOpened = Execution.delayUntil(RandomGenerator.nextInt(800, 3000), () -> Interfaces.isOpen(1370));
+                boolean interfaceOpened = Execution.delayUntil(RandomGenerator.nextInt(200, 600), () -> Interfaces.isOpen(1370));
 
                 if (interfaceOpened) {
                     println("Interface opened");
@@ -230,51 +235,45 @@ public class FortScript extends LoopingScript {
         SceneObject spot = constructionSpots.first();
 
         if (spot != null) {
-            Area.Rectangular area = new Area.Rectangular(spot.getCoordinate().derive(-1, -1, 0), spot.getCoordinate().derive(1, 1, 0));
+            Area.Rectangular area = new Area.Rectangular(spot.getCoordinate().derive(-2, -2, 0), spot.getCoordinate().derive(2, 2, 0));
 
             Coordinate randomCoordinate = area.getRandomCoordinate();
 
-            EntityResultSet<SceneObject> objectsAtTarget = SceneObjectQuery.newQuery().on(randomCoordinate).results();
-            while (!objectsAtTarget.isEmpty()) {
-                randomCoordinate = area.getRandomCoordinate();
-                objectsAtTarget = SceneObjectQuery.newQuery().on(randomCoordinate).results();
-            }
 
-            if(!area.contains(Client.getLocalPlayer().getCoordinate())) {
+            if(Distance.to(spot) >= 30)
+            {
                 WalkTo(randomCoordinate);
+                println("Walking to construction spot");
             }else {
+                println("hotspot closer than 30, clicking");
                 currentState = BotState.FIND_CONSTRUCTION_SPOT;
             }
         }
     }
 
     public boolean WalkTo(Coordinate coordinate) {
-        List<Coordinate> potentialCoordinates = Arrays.asList(coordinate);
 
-        for (Coordinate potentialCoordinate : potentialCoordinates) {
-            EntityResultSet<SceneObject> objectsAtTarget = SceneObjectQuery.newQuery().on(potentialCoordinate).results();
-            if (objectsAtTarget.isEmpty()) {
-                return WalkTo(potentialCoordinate.getX(), potentialCoordinate.getY());
-            }
+        if (Movement.traverse(NavPath.resolve(coordinate)) == TraverseEvent.State.FINISHED) {
+            println("Arrived at " + coordinate.getX() + ", " + coordinate.getY());
+            return true;
+        } else {
+            println("Failed to arrive at " + coordinate.getX() + ", " + coordinate.getY());
+            return false;
         }
-
-        println("All potential coordinates are blocked by an object.");
-        return false;
     }
 
     public boolean WalkTo(int x, int y) {
-       if(Client.getLocalPlayer().isMoving()) {
-           return false;
-       }
-       if(Client.getLocalPlayer().getCoordinate().getX() != x || Client.getLocalPlayer().getCoordinate().getY() != y) {
-           Travel.walkTo(x, y);
-           println("Walking to " + x + ", " + y);
+        Area targetArea = new Area.Rectangular(new Coordinate(x - 1, y - 1, 0), new Coordinate(x + 1, y + 1, 0));
 
-           Execution.delayUntil(RandomGenerator.nextInt(600, 1000), () -> !Client.getLocalPlayer().isMoving());
 
-           return Client.getLocalPlayer().getCoordinate().getX() == x && Client.getLocalPlayer().getCoordinate().getY() == y;
-       }
-         return false;
+        // Check if the player has arrived at the target area
+        if (Movement.traverse(NavPath.resolve(targetArea)) == TraverseEvent.State.FINISHED) {
+            println("Arrived at " + x + ", " + y);
+            return true;
+        } else {
+            println("Failed to arrive at " + x + ", " + y);
+            return false;
+        }
     }
 
     public String getElapsedTime() {
