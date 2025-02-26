@@ -15,29 +15,27 @@ import net.botwithus.rs3.game.queries.results.EntityResultSet;
 import net.botwithus.rs3.game.scene.entities.characters.player.Player;
 import net.botwithus.rs3.game.scene.entities.object.SceneObject;
 import net.botwithus.rs3.game.skills.Skills;
-import net.botwithus.rs3.imgui.NativeInteger;
 import net.botwithus.rs3.script.Execution;
 import net.botwithus.rs3.script.LoopingScript;
 import net.botwithus.rs3.script.config.ScriptConfig;
 import net.botwithus.rs3.util.RandomGenerator;
 
-import java.util.Arrays;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class FortScript extends LoopingScript {
     public boolean ActivePlay = true;
+    public int totalTasks;
+    private boolean hasSubmittedPlan;
 
     public FortScript(String name, ScriptConfig scriptConfig, ScriptDefinition scriptDefinition) {
         super(name, scriptConfig, scriptDefinition);
     }
 
     public long startTime;
-
     public int runCounter = 0;
-
 
     public Area.Rectangular area = new Area.Rectangular(new Coordinate(3289, 3553, 0), new Coordinate(3293, 3556, 0));
     public boolean runScript = false;
@@ -46,7 +44,17 @@ public class FortScript extends LoopingScript {
     int levelsGained = 0;
 
     private boolean hasClickedBuild = false;
-
+    public String[] arrayOfString = {
+            "Workshop (Tier 1)", "Workshop (Tier 2)", "Workshop (Tier 3)",
+            "Town hall (Tier 1)", "Town hall (Tier 2)", "Town hall (Tier 3)",
+            "Chapel (Tier 1)", "Chapel (Tier 2)", "Chapel (Tier 3)",
+            "Command centre (Tier 1)", "Command centre (Tier 2)", "Command centre (Tier 3)",
+            "Kitchen (Tier 1)", "Kitchen (Tier 2)", "Kitchen (Tier 3)",
+            "Guardhouse (Tier 1)", "Guardhouse (Tier 2)", "Guardhouse (Tier 3)",
+            "Grove cabin (Tier 1)", "Grove cabin (Tier 2)", "Grove cabin (Tier 3)",
+            "Rangers workroom (Tier 1)", "Rangers workroom (Tier 2)", "Rangers workroom (Tier 3)",
+            "Botanist's Workbench (Tier 1)", "Botanist's Workbench (Tier 2)", "Botanist's Workbench (Tier 3)"
+    };
 
     public enum BotState {
         WALK_TO_CONSTRUCTION_SPOT,
@@ -55,11 +63,17 @@ public class FortScript extends LoopingScript {
         WALK_TO_TABLE,
         CHECK_PLANS
     }
-    BotState currentState = BotState.FIND_CONSTRUCTION_SPOT;
-    public NativeInteger selectedIndex = new NativeInteger(0);
+    public BotState currentState = BotState.FIND_CONSTRUCTION_SPOT;
+    public int selectedIndex = 0;
 
-    public  Pattern framePattern = Pattern.compile(".*frame.*", Pattern.CASE_INSENSITIVE);
+    public Pattern framePattern = Pattern.compile(".*frame.*", Pattern.CASE_INSENSITIVE);
     public Pattern wallSegmentPattern = Pattern.compile(".*wall segment.*", Pattern.CASE_INSENSITIVE);
+
+    public List<String> taskQueue = new ArrayList<>();
+    public boolean repeatQueue = false;
+    public int currentTaskIndex = 0;
+    // Each task is one of the options in arrayOfString; taskCount is indexed by that array
+    public int[] taskCount = new int[arrayOfString.length];
 
     @Override
     public boolean initialize() {
@@ -67,6 +81,7 @@ public class FortScript extends LoopingScript {
         this.loopDelay = 550;
 
         startTime = System.currentTimeMillis();
+        currentTaskIndex = 0;
 
         subscribe(SkillUpdateEvent.class, skillUpdateEvent -> {
             if (skillUpdateEvent.getId() == Skills.CONSTRUCTION.getId()) {
@@ -86,9 +101,26 @@ public class FortScript extends LoopingScript {
         }
         Player player = Client.getLocalPlayer();
         if (Client.getGameState() != Client.GameState.LOGGED_IN || player == null) {
-            Execution.delay(RandomGenerator.nextInt(2500,5500));
+            Execution.delay(RandomGenerator.nextInt(2500, 5500));
             return;
         }
+
+        // Ensure the task queue is not empty.
+        if(taskQueue.isEmpty()){
+            if(repeatQueue){
+                taskQueue.addAll(Arrays.asList(arrayOfString));
+                currentTaskIndex = 0;
+            } else {
+                println("Task queue is empty and repeatQueue is disabled. Stopping script.");
+                runScript = false;
+                return;
+            }
+        }
+
+        // Set selected index based on the current task (by matching to arrayOfString)
+        String currentTask = taskQueue.get(currentTaskIndex);
+        selectedIndex = Arrays.asList(arrayOfString).indexOf(currentTask);
+
         switch (currentState) {
             case WALK_TO_CONSTRUCTION_SPOT:
                 walkToConstructionSpot();
@@ -104,76 +136,137 @@ public class FortScript extends LoopingScript {
                 break;
             case CHECK_PLANS:
                 checkPlans();
+                if (hasSubmittedPlan) {
+                    if (repeatQueue) {
+                        // Increment attempt count for this task and move to the next task cyclically.
+                        int arrIndex = selectedIndex;
+                        taskCount[arrIndex]++;
+                        currentTaskIndex = (currentTaskIndex + 1) % taskQueue.size();
+                    } else {
+                        // Task completed – reset its count and remove it from the queue.
+                        int arrIndex = selectedIndex;
+                        taskCount[arrIndex] = 0;
+                        taskQueue.remove(currentTaskIndex);
+                        if(currentTaskIndex >= taskQueue.size() && !taskQueue.isEmpty()){
+                            currentTaskIndex = 0;
+                        }
+                    }
+                    hasSubmittedPlan = false;
+                }
                 break;
         }
     }
-    private boolean hasRequiredMaterials() {
 
-        int frameCount = 0;
-        int wallSegmentCount = 0;
-
-        for (Item item : Backpack.getItems()) {
-            String itemName = item.getName();
-            if(itemName == null) {
-                continue;
-            }
-
-            Matcher frameMatcher = framePattern.matcher(itemName);
-            if (frameMatcher.matches()) {
-                frameCount++;
-            }
-
-            Matcher wallSegmentMatcher = wallSegmentPattern.matcher(itemName);
-            if (wallSegmentMatcher.matches()) {
-                wallSegmentCount++;
-            }
-        }
-
-        boolean hasAllMaterials = frameCount > 0 && wallSegmentCount > 0;
-
-        if (frameCount == 0) {
-            println("Missing frame");
-        }
-        if (wallSegmentCount == 0) {
-            println("Missing wall segment");
-        }
-
-        return hasAllMaterials;
-    }
-    private void checkPlans() {
-        if (Interfaces.isOpen(1370)) {
-            if(!hasRequiredMaterials()) {
-                println("Missing required materials");
-                currentState = BotState.FIND_BLUEPRINT_SPOT;
+    // Advances to the next task and increments its attempt count.
+    private void advanceTask(){
+        if(taskQueue.isEmpty()){
+            if(repeatQueue){
+                taskQueue.addAll(Arrays.asList(arrayOfString));
+                currentTaskIndex = 0;
+            } else {
+                println("No tasks available. Stopping script.");
                 runScript = false;
                 return;
-            }else
-            {
-            int optionIndex = 1 + (selectedIndex.get() * 4);
+            }
+        } else {
+            currentTaskIndex = (currentTaskIndex + 1) % taskQueue.size();
+            int arrIndex = Arrays.asList(arrayOfString).indexOf(taskQueue.get(currentTaskIndex));
+            taskCount[arrIndex]++;
+        }
+    }
+
+    private boolean hasRequiredMaterials(String building) {
+        Map<String, Integer> requiredItems = BUILDING_REQUIREMENTS.get(building);
+        if (requiredItems == null) {
+            println("No material requirements found for: " + building);
+            return false;
+        }
+
+        // Count how many of each item is in the backpack
+        Map<String, Integer> inventoryCount = new HashMap<>();
+        for (Item item : Backpack.getItems()) {
+            String name = item.getName();
+            if (name != null) {
+                // Increment the count for that item name
+                inventoryCount.put(name, inventoryCount.getOrDefault(name, 0) + 1);
+            }
+        }
+
+        // Compare inventory counts to the required counts
+        for (Map.Entry<String, Integer> entry : requiredItems.entrySet()) {
+            String requiredName = entry.getKey();
+            int requiredAmount = entry.getValue();
+            int haveAmount = inventoryCount.getOrDefault(requiredName, 0);
+
+            if (haveAmount < requiredAmount) {
+                println("Missing " + requiredName + " for " + building
+                        + ". Required: " + requiredAmount + ", Found: " + haveAmount);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void checkPlans() {
+        if(taskQueue.isEmpty()) {
+            println("Task queue is empty");
+            SceneObject hotspot = SceneObjectQuery.newQuery().name("Optimal Construction hotspot").results().first();
+            if (hotspot != null) {
+                currentState = BotState.FIND_CONSTRUCTION_SPOT;
+            } else {
+                runScript = false;
+            }
+            return;
+        }
+
+        String currentBuilding = taskQueue.get(currentTaskIndex);
+        if (!hasRequiredMaterials(currentBuilding)) {
+            println("Missing required materials for " + currentBuilding);
+            currentState = BotState.FIND_BLUEPRINT_SPOT;
+            runScript = false;
+            return;
+        }
+
+        if (Interfaces.isOpen(1370)) {
+            int optionIndex = 1 + (selectedIndex * 4);
             MiniMenu.interact(ComponentAction.COMPONENT.getType(), 1, optionIndex, 89849878);
             Execution.delay(RandomGenerator.nextInt(800, 1500));
             MiniMenu.interact(ComponentAction.DIALOGUE.getType(), 0, -1, 89784350);
             Execution.delay(RandomGenerator.nextInt(3000, 5000));
+            hasSubmittedPlan = true;
             currentState = BotState.WALK_TO_CONSTRUCTION_SPOT;
-            }
-            }
+        }
     }
 
+    public Map<String, Integer> computeTotalMaterialsNeededForQueue() {
+        Map<String, Integer> totalNeeded = new HashMap<>();
+
+        for (String building : taskQueue) {
+            Map<String, Integer> requiredItems = BUILDING_REQUIREMENTS.get(building);
+            if (requiredItems != null) {
+                // Merge each item into the running total
+                for (Map.Entry<String, Integer> e : requiredItems.entrySet()) {
+                    totalNeeded.merge(e.getKey(), e.getValue(), Integer::sum);
+                }
+            }
+        }
+        return totalNeeded;
+    }
+
+
     private void walkToTable() {
-        Coordinate table = area.getRandomCoordinate();
         if (!this.area.contains(Client.getLocalPlayer().getCoordinate())) {
-            WalkTo(table);
-        }else {
-                println("Walking to table");
-                currentState = BotState.FIND_BLUEPRINT_SPOT;
+            WalkTo(area.getRandomCoordinate());
+        } else {
+            println("Walking to table");
+            currentState = BotState.FIND_BLUEPRINT_SPOT;
         }
     }
 
     private void findBlueprintSpot() {
-        EntityResultSet<SceneObject> Blueprintspot = SceneObjectQuery.newQuery().name("Fort Forinthry blueprints").results();
-        SceneObject spot = Blueprintspot.first();
+        EntityResultSet<SceneObject> blueprintSpots = SceneObjectQuery.newQuery().name("Fort Forinthry blueprints").results();
+        SceneObject spot = blueprintSpots.first();
         if (spot != null) {
-
             if (Client.getLocalPlayer() != null && !Client.getLocalPlayer().isMoving() && Distance.to(spot) <= 8) {
                 runCounter++;
                 boolean interfaceOpened = Execution.delayUntil(RandomGenerator.nextInt(200, 600), () -> Interfaces.isOpen(1370));
@@ -193,42 +286,39 @@ public class FortScript extends LoopingScript {
     }
 
     private void findConstructionSpot() {
-        EntityResultSet<SceneObject> constructionspot = SceneObjectQuery.newQuery().name("Optimal Construction hotspot").results();
-        SceneObject spot = constructionspot.first();
+        SceneObject spot = SceneObjectQuery.newQuery().name("Optimal Construction hotspot").results().first();
         if (spot != null) {
-            if(Distance.to(spot) >= 30)
-            {
-                hasClickedBuild = false;
-                currentState = BotState.WALK_TO_CONSTRUCTION_SPOT;
-            }else {
-            if(!Client.getLocalPlayer().isMoving()) {
-                if (!hasClickedBuild && Distance.to(spot) >= 1) {
-                    spot.interact("Build");
-                    println("Found construction spot");
-                    hasClickedBuild = true;
-                    if (ActivePlay) {
-                        Execution.delay(RandomGenerator.nextInt(800, 1200));
-                    } else {
-                        Execution.delay(RandomGenerator.nextInt(3000, 10000));
-                    }
-                } else if (hasClickedBuild && Distance.to(spot) > 1) {
-                    if (ActivePlay) {
-                        Execution.delay(RandomGenerator.nextInt(800, 1200));
-                    } else {
-                        Execution.delay(RandomGenerator.nextInt(3000, 10000));
-                    }
-                    hasClickedBuild = false;
-                }
-                }
-            }
-        }
-        else {
-            hasClickedBuild = false;
+            handleSpot(spot);
+        } else {
+            advanceTask();
             currentState = BotState.WALK_TO_TABLE;
-
         }
     }
 
+    private void handleSpot(SceneObject spot) {
+        if(Distance.to(spot) >= 30) {
+            hasClickedBuild = false;
+            currentState = BotState.WALK_TO_CONSTRUCTION_SPOT;
+        } else if(!Client.getLocalPlayer().isMoving()) {
+            interactWithSpot(spot);
+        }
+    }
+
+    private void interactWithSpot(SceneObject spot) {
+        if (!hasClickedBuild && Distance.to(spot) >= 1) {
+            spot.interact("Build");
+            println("Found construction spot");
+            hasClickedBuild = true;
+            Execution.delay(getDelay());
+        } else if (hasClickedBuild && Distance.to(spot) > 1) {
+            Execution.delay(getDelay());
+            hasClickedBuild = false;
+        }
+    }
+
+    private int getDelay() {
+        return ActivePlay ? RandomGenerator.nextInt(200, 400) : RandomGenerator.nextInt(3000, 10000);
+    }
 
     private void walkToConstructionSpot() {
         EntityResultSet<SceneObject> constructionSpots = SceneObjectQuery.newQuery().name("Optimal Construction hotspot").results();
@@ -236,23 +326,19 @@ public class FortScript extends LoopingScript {
 
         if (spot != null) {
             Area.Rectangular area = new Area.Rectangular(spot.getCoordinate().derive(-2, -2, 0), spot.getCoordinate().derive(2, 2, 0));
-
             Coordinate randomCoordinate = area.getRandomCoordinate();
 
-
-            if(Distance.to(spot) >= 30)
-            {
+            if(Distance.to(spot) >= 30) {
                 WalkTo(randomCoordinate);
                 println("Walking to construction spot");
-            }else {
-                println("hotspot closer than 30, clicking");
+            } else {
+                println("Hotspot closer than 30, clicking");
                 currentState = BotState.FIND_CONSTRUCTION_SPOT;
             }
         }
     }
 
     public boolean WalkTo(Coordinate coordinate) {
-
         if (Movement.traverse(NavPath.resolve(coordinate)) == TraverseEvent.State.FINISHED) {
             println("Arrived at " + coordinate.getX() + ", " + coordinate.getY());
             return true;
@@ -264,9 +350,6 @@ public class FortScript extends LoopingScript {
 
     public boolean WalkTo(int x, int y) {
         Area targetArea = new Area.Rectangular(new Coordinate(x - 1, y - 1, 0), new Coordinate(x + 1, y + 1, 0));
-
-
-        // Check if the player has arrived at the target area
         if (Movement.traverse(NavPath.resolve(targetArea)) == TraverseEvent.State.FINISHED) {
             println("Arrived at " + x + ", " + y);
             return true;
@@ -279,12 +362,161 @@ public class FortScript extends LoopingScript {
     public String getElapsedTime() {
         long endTime = System.currentTimeMillis();
         long elapsedTime = endTime - startTime;
-
         long hours = TimeUnit.MILLISECONDS.toHours(elapsedTime);
         long minutes = TimeUnit.MILLISECONDS.toMinutes(elapsedTime) % 60;
         long seconds = TimeUnit.MILLISECONDS.toSeconds(elapsedTime) % 60;
-
         return String.format("Elapsed time: %02d:%02d:%02d", hours, minutes, seconds);
+    }
+
+    private static final Map<String, Map<String, Integer>> BUILDING_REQUIREMENTS = new HashMap<>();
+
+    static {
+        // ───────────── Workshop ─────────────
+        // Tier 1 -> 8 Wooden frame, 6 Stone wall segment
+        Map<String, Integer> workshopT1 = new HashMap<>();
+        workshopT1.put("Wooden frame", 8);
+        workshopT1.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Workshop (Tier 1)", workshopT1);
+
+        // Tier 2 -> 20 Teak frame, 6 Stone wall segment
+        Map<String, Integer> workshopT2 = new HashMap<>();
+        workshopT2.put("Teak frame", 20);
+        workshopT2.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Workshop (Tier 2)", workshopT2);
+
+        // Tier 3 -> 48 Yew frame, 6 Stone wall segment
+        Map<String, Integer> workshopT3 = new HashMap<>();
+        workshopT3.put("Yew frame", 48);
+        workshopT3.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Workshop (Tier 3)", workshopT3);
+
+        // ───────────── Town Hall ─────────────
+        Map<String, Integer> townT1 = new HashMap<>();
+        townT1.put("Oak frame", 10);
+        townT1.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Town hall (Tier 1)", townT1);
+
+        Map<String, Integer> townT2 = new HashMap<>();
+        townT2.put("Maple frame", 22);
+        townT2.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Town hall (Tier 2)", townT2);
+
+        Map<String, Integer> townT3 = new HashMap<>();
+        townT3.put("Magic frame", 60);
+        townT3.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Town hall (Tier 3)", townT3);
+
+        // ───────────── Chapel ─────────────
+        Map<String, Integer> chapelT1 = new HashMap<>();
+        chapelT1.put("Oak frame", 10);
+        chapelT1.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Chapel (Tier 1)", chapelT1);
+
+        Map<String, Integer> chapelT2 = new HashMap<>();
+        chapelT2.put("Acadia frame", 24);
+        chapelT2.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Chapel (Tier 2)", chapelT2);
+
+        Map<String, Integer> chapelT3 = new HashMap<>();
+        chapelT3.put("Elder frame", 50);
+        chapelT3.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Chapel (Tier 3)", chapelT3);
+
+        // ───────────── Command Centre ─────────────
+        Map<String, Integer> commandT1 = new HashMap<>();
+        commandT1.put("Willow frame", 12);
+        commandT1.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Command centre (Tier 1)", commandT1);
+
+        Map<String, Integer> commandT2 = new HashMap<>();
+        commandT2.put("Yew frame", 26);
+        commandT2.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Command centre (Tier 2)", commandT2);
+
+        Map<String, Integer> commandT3 = new HashMap<>();
+        commandT3.put("Elder frame", 80);
+        commandT3.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Command centre (Tier 3)", commandT3);
+
+        // ───────────── Kitchen ─────────────
+        Map<String, Integer> kitchenT1 = new HashMap<>();
+        kitchenT1.put("Willow frame", 12);
+        kitchenT1.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Kitchen (Tier 1)", kitchenT1);
+
+        Map<String, Integer> kitchenT2 = new HashMap<>();
+        kitchenT2.put("Acadia frame", 22);
+        kitchenT2.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Kitchen (Tier 2)", kitchenT2);
+
+        Map<String, Integer> kitchenT3 = new HashMap<>();
+        kitchenT3.put("Magic frame", 50);
+        kitchenT3.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Kitchen (Tier 3)", kitchenT3);
+
+        // ───────────── Guardhouse ─────────────
+        Map<String, Integer> guardT1 = new HashMap<>();
+        guardT1.put("Maple frame", 14);
+        guardT1.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Guardhouse (Tier 1)", guardT1);
+
+        Map<String, Integer> guardT2 = new HashMap<>();
+        guardT2.put("Mahogany frame", 26);
+        guardT2.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Guardhouse (Tier 2)", guardT2);
+
+        Map<String, Integer> guardT3 = new HashMap<>();
+        guardT3.put("Elder frame", 70);
+        guardT3.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Guardhouse (Tier 3)", guardT3);
+
+        // ───────────── Grove Cabin ─────────────
+        Map<String, Integer> groveT1 = new HashMap<>();
+        groveT1.put("Wooden frame", 8);
+        groveT1.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Grove cabin (Tier 1)", groveT1);
+
+        Map<String, Integer> groveT2 = new HashMap<>();
+        groveT2.put("Teak frame", 20);
+        groveT2.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Grove cabin (Tier 2)", groveT2);
+
+        Map<String, Integer> groveT3 = new HashMap<>();
+        groveT3.put("Mahogany frame", 48);
+        groveT3.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Grove cabin (Tier 3)", groveT3);
+
+        // ───────────── Ranger's Workroom ─────────────
+        Map<String, Integer> rangerT1 = new HashMap<>();
+        rangerT1.put("Acadia frame", 14);
+        rangerT1.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Rangers workroom (Tier 1)", rangerT1);
+
+        Map<String, Integer> rangerT2 = new HashMap<>();
+        rangerT2.put("Mahogany frame", 24);
+        rangerT2.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Rangers workroom (Tier 2)", rangerT2);
+
+        Map<String, Integer> rangerT3 = new HashMap<>();
+        rangerT3.put("Magic frame", 42);
+        rangerT3.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Rangers workroom (Tier 3)", rangerT3);
+
+        // ───────────── Botanist's Workbench ─────────────
+        Map<String, Integer> botanistT1 = new HashMap<>();
+        botanistT1.put("Acadia frame", 4);
+        botanistT1.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Botanist's Workbench (Tier 1)", botanistT1);
+
+        Map<String, Integer> botanistT2 = new HashMap<>();
+        botanistT2.put("Yew frame", 8);
+        botanistT2.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Botanist's Workbench (Tier 2)", botanistT2);
+
+        Map<String, Integer> botanistT3 = new HashMap<>();
+        botanistT3.put("Elder frame", 12);
+        botanistT3.put("Stone wall segment", 6);
+        BUILDING_REQUIREMENTS.put("Botanist's Workbench (Tier 3)", botanistT3);
     }
 
 }
