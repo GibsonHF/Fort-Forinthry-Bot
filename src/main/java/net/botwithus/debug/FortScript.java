@@ -188,7 +188,7 @@ public class FortScript extends LoopingScript {
             String name = item.getName();
             if (name != null) {
                 // Increment the count for that item name
-                inventoryCount.put(name, inventoryCount.getOrDefault(name, 0) + 1);
+                inventoryCount.put(name, inventoryCount.getOrDefault(name, 0) + item.getStackSize());
             }
         }
 
