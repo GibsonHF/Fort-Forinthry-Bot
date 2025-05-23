@@ -280,7 +280,7 @@ public class FortScript extends LoopingScript {
         EntityResultSet<SceneObject> blueprintSpots = SceneObjectQuery.newQuery().name("Fort Forinthry blueprints").results();
         SceneObject spot = blueprintSpots.first();
 
-        if (spot != null && Client.getLocalPlayer() != null && Distance.to(spot) <= 30) {
+        if (spot != null && Client.getLocalPlayer() != null && Distance.to(spot) <= 20) {
             // We're already close enough to interact directly
             println("Already close to blueprint table, proceeding to interact");
             currentState = BotState.FIND_BLUEPRINT_SPOT;
@@ -333,9 +333,11 @@ public class FortScript extends LoopingScript {
     }
 
     private void handleSpot(SceneObject spot) {
-        if (Distance.to(spot) >= 30) {
+        int distance = (int) Distance.to(spot);
+        if (distance >= 20) {
             hasClickedBuild = false;
             currentState = BotState.WALK_TO_CONSTRUCTION_SPOT;
+            println("Construction spot too far away (" + distance + " tiles), moving closer");
         } else if (!Client.getLocalPlayer().isMoving()) {
             interactWithSpot(spot);
         }
@@ -365,11 +367,11 @@ public class FortScript extends LoopingScript {
             Area.Rectangular area = new Area.Rectangular(spot.getCoordinate().derive(-2, -2, 0), spot.getCoordinate().derive(2, 2, 0));
             Coordinate randomCoordinate = area.getRandomCoordinate();
 
-            if (Distance.to(spot) >= 30) {
+            if (Distance.to(spot) >= 20) {
                 WalkTo(randomCoordinate);
-                println("Walking to construction spot");
+                println("Walking to construction spot, distance: " + Distance.to(spot));
             } else {
-                println("Hotspot closer than 30, clicking");
+                println("Hotspot closer than 20 tiles, clicking");
                 currentState = BotState.FIND_CONSTRUCTION_SPOT;
             }
         } else {
