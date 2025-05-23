@@ -277,7 +277,14 @@ public class FortScript extends LoopingScript {
     }
 
     private void walkToTable() {
-        if (!this.area.contains(Client.getLocalPlayer().getCoordinate())) {
+        EntityResultSet<SceneObject> blueprintSpots = SceneObjectQuery.newQuery().name("Fort Forinthry blueprints").results();
+        SceneObject spot = blueprintSpots.first();
+
+        if (spot != null && Client.getLocalPlayer() != null && Distance.to(spot) <= 30) {
+            // We're already close enough to interact directly
+            println("Already close to blueprint table, proceeding to interact");
+            currentState = BotState.FIND_BLUEPRINT_SPOT;
+        } else if (!this.area.contains(Client.getLocalPlayer().getCoordinate())) {
             WalkTo(area.getRandomCoordinate());
         } else {
             println("Walking to table");
