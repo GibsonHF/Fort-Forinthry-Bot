@@ -298,16 +298,30 @@ public class FortScript extends LoopingScript {
         if (spot != null) {
             if (Client.getLocalPlayer() != null && !Client.getLocalPlayer().isMoving() && Distance.to(spot) <= 8) {
                 runCounter++;
-                boolean interfaceOpened = Execution.delayUntil(RandomGenerator.nextInt(200, 600), () -> Interfaces.isOpen(1370));
+                // First try to interact with the blueprint spot
+                spot.interact("Check plans");
+                println("Interacting with blueprint spot, checking plans");
+                
+                // Wait for the interface to open
+                boolean interfaceOpened = Execution.delayUntil(RandomGenerator.nextInt(3000, 5000), () -> Interfaces.isOpen(1370));
 
                 if (interfaceOpened) {
-                    println("Interface opened");
+                    println("Blueprint interface opened");
                     currentState = BotState.CHECK_PLANS;
                 } else {
-                    spot.interact("Check plans");
-                    Execution.delay(RandomGenerator.nextInt(800, 1500));
-                    println("Found blueprint spot");
+                    println("Interface didn't open, trying again...");
+                    // If we're not moving and still close to the spot, retry the interaction
+                    if (!Client.getLocalPlayer().isMoving() && Distance.to(spot) <= 8) {
+                        Execution.delay(RandomGenerator.nextInt(600, 1200));
+                    } else {
+                        // Walk closer to the blueprint spot if needed
+                        currentState = BotState.WALK_TO_TABLE;
+                    }
                 }
+            } else {
+                // Not close enough to the spot or still moving
+                println("Moving closer to blueprint spot");
+                spot.interact("Check plans");
             }
         } else {
             SceneObject constructionSpot = SceneObjectQuery.newQuery().name("Optimal Construction hotspot").results().first();
