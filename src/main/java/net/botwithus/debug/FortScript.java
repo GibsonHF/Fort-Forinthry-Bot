@@ -351,6 +351,7 @@ public class FortScript extends LoopingScript {
         if (distance >= 20) {
             hasClickedBuild = false;
             currentState = BotState.WALK_TO_CONSTRUCTION_SPOT;
+            Movement.walkTo(spot.getCoordinate().getX(), spot.getCoordinate().getY(), false);
             println("Construction spot too far away (" + distance + " tiles), moving closer");
         } else if (!Client.getLocalPlayer().isMoving()) {
             interactWithSpot(spot);
